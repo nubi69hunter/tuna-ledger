@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Collection · Tuna Ledger</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="nav"></div>
+<div class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">Can storage</div>
+    <h1>The <span class="fin">Collection</span></h1>
+    <p>Every tuna you've catalogued. The badge shows how many times you've eaten each one.</p>
+  </header>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="sec-head"><h2>Your Cans</h2><span class="tag" id="count">// 0</span></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+    <input id="search" placeholder="Search…" style="max-width:260px">
+    <select id="typeFilter" style="max-width:200px"><option value="">All types</option></select>
+    <select id="sort" style="max-width:220px">
+      <option value="eaten">Most eaten</option>
+      <option value="protein">Best protein value</option>
+      <option value="grams">Most grams</option>
+      <option value="name">Brand A–Z</option>
+    </select>
+  </div>
+  <div id="grid" class="card-grid"></div>
+
+  <footer>The Tuna Ledger</footer>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+document.getElementById('nav').innerHTML = renderNav('collection');
+let cans = [], types = [];
+
+async function init(){
+  [cans, types] = await Promise.all([API.get('/cans'), API.get('/types')]);
+  const tf = document.getElementById('typeFilter');
+  tf.innerHTML += types.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  renderStrip();
+  render();
+}
+
+function renderStrip(){
+  const eaten = cans.filter(c=>c.times_eaten>0);
+  const totalMeals = cans.reduce((s,c)=>s+c.times_eaten,0);
+  const spent = cans.reduce((s,c)=>s+c.total_spent,0);
+  document.getElementById('strip').innerHTML = `
+    <div class="stat"><div class="k">Cans catalogued</div><div class="v">${cans.length}</div></div>
+    <div class="stat"><div class="k">Total meals</div><div class="v">${totalMeals}</div></div>
+    <div class="stat"><div class="k">Types used</div><div class="v">${new Set(cans.map(c=>c.type?.name).filter(Boolean)).size}</div></div>
+    <div class="stat"><div class="k">Total spent</div><div class="v oil">${num(spent,2)}<small> ﷼</small></div></div>`;
+}
+
+function render(){
+  let list = cans.slice();
+  const q = document.getElementById('search').value.toLowerCase();
+  const tf = document.getElementById('typeFilter').value;
+  const sort = document.getElementById('sort').value;
+  if(q) list = list.filter(c=>(c.brand+' '+(c.product||'')).toLowerCase().includes(q));
+  if(tf) list = list.filter(c=>String(c.type_id)===tf);
+  if(sort==='eaten') list.sort((a,b)=>b.times_eaten-a.times_eaten);
+  if(sort==='protein') list.sort((a,b)=>(a.avg_per_protein??1e9)-(b.avg_per_protein??1e9));
+  if(sort==='grams') list.sort((a,b)=>(b.avg_grams??0)-(a.avg_grams??0));
+  if(sort==='name') list.sort((a,b)=>a.brand.localeCompare(b.brand));
+
+  document.getElementById('count').textContent = `// ${list.length}`;
+  const el = document.getElementById('grid');
+  if(!cans.length){
+    el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="big">Nothing catalogued</span>
+      Add your first can while logging a meal.<br><br><a class="btn primary" href="/log">Log a Meal →</a></div>`;
+    return;
+  }
+  el.innerHTML = list.map(c=>`
+    <div class="can-card" onclick="location.href='/can?id=${c.id}'">
+      ${c.times_eaten?`<span class="eaten-badge">${c.times_eaten}×</span>`:''}
+      <div style="margin-bottom:8px">${chip(c.type)}</div>
+      <div class="cc-brand">${esc(c.brand)}</div>
+      ${c.product?`<div class="cc-product">${esc(c.product)}</div>`:'<div class="cc-product dim">—</div>'}
+      <div class="cc-figs">
+        <span>${c.avg_grams?`avg <b>${num(c.avg_grams)}g</b> drained`:'<span class="dim">not eaten yet</span>'}</span>
+        ${c.avg_per_protein?`<span><b>${num(c.avg_per_protein,3)}</b> ﷼/g protein</span>`:''}
+        ${c.total_spent?`<span class="dim">spent ${num(c.total_spent,2)} ﷼</span>`:''}
+      </div>
+    </div>`).join('');
+}
+
+['search','typeFilter','sort'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+init();
+</script>
+</body>
+</html>

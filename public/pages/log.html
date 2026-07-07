@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log a Meal · Tuna Ledger</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dial.css">
+</head>
+<body>
+<div id="nav"></div>
+<div class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">New entry</div>
+    <h1>Log a <span class="fin">Meal</span></h1>
+    <p>Pick the can from your collection, dial in the drained grams from your scale, enter what you paid.</p>
+  </header>
+
+  <!-- STEP 1: pick can -->
+  <div class="sec-head"><h2>1 · Pick the Can</h2><span class="tag" id="pickTag">// your collection</span></div>
+  <div style="margin-bottom:14px">
+    <input id="canSearch" type="text" placeholder="Search brand or product…">
+  </div>
+  <div id="canPicker" class="card-grid" style="margin-bottom:14px"></div>
+  <button class="btn" id="addCanBtn">＋ Add a new can</button>
+
+  <!-- STEP 2: weigh + price (hidden until a can is picked) -->
+  <div id="step2" style="display:none;margin-top:40px">
+    <div class="sec-head"><h2>2 · Weigh &amp; Price</h2><span class="tag" id="pickedTag"></span></div>
+    <div class="row"><div id="dialMount"></div></div>
+    <div class="row two">
+      <div>
+        <label for="price">Price paid (﷼)</label>
+        <input id="price" type="number" step="0.01" min="0" placeholder="e.g. 7.50">
+      </div>
+      <div>
+        <label for="date">Date</label>
+        <input id="date" type="date">
+      </div>
+    </div>
+    <div class="row">
+      <label for="note">Notes on this can</label>
+      <textarea id="note" placeholder="Oil or water? Flaky or mushy? Too salty? Worth repeating?"></textarea>
+    </div>
+    <div class="row" id="liveCalc" style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--paper-dim);background:var(--abyss);border:1px dashed var(--line);padding:10px 12px"></div>
+    <button class="btn primary full" id="saveMeal">Record Meal →</button>
+  </div>
+
+  <footer>The Tuna Ledger</footer>
+</div>
+
+<!-- Add-can modal -->
+<div class="modal-bg" id="canModal">
+  <div class="modal">
+    <button class="modal-close" id="closeModal">×</button>
+    <h3>New Can</h3>
+    <div class="row"><label for="m_brand">Brand</label><input id="m_brand" placeholder="e.g. Rio Mare"></div>
+    <div class="row"><label for="m_product">Product name <span class="dim">opt.</span></label><input id="m_product" placeholder="e.g. Solid Light in Olive Oil"></div>
+    <div class="row"><label>Type</label><div id="typePicker" style="display:flex;gap:8px;flex-wrap:wrap"></div></div>
+    <div class="row two">
+      <div><label for="m_label">Labeled net wt (g) <span class="dim">opt.</span></label><input id="m_label" type="number" placeholder="e.g. 160"></div>
+      <div><label for="m_protein">Protein / 100g <span class="dim">opt.</span></label><input id="m_protein" type="number" step="0.1" placeholder="default 25"></div>
+    </div>
+    <div class="row"><label for="m_notes">Notes <span class="dim">opt.</span></label><textarea id="m_notes" placeholder="Anything about this product in general"></textarea></div>
+    <button class="btn primary full" id="saveCan">Add to Collection →</button>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/dial.js"></script>
+<script>
+document.getElementById('nav').innerHTML = renderNav('log');
+
+let cans = [], types = [], selectedType = null, pickedCan = null, dial = null;
+
+async function init(){
+  [cans, types] = await Promise.all([API.get('/cans'), API.get('/types')]);
+  renderPicker();
+  renderTypePicker();
+  document.getElementById('date').valueAsDate = new Date();
+}
+
+function renderPicker(filter=''){
+  const el = document.getElementById('canPicker');
+  const f = filter.toLowerCase();
+  const list = cans.filter(c => (c.brand+' '+(c.product||'')).toLowerCase().includes(f));
+  document.getElementById('pickTag').textContent = `// ${cans.length} can${cans.length!==1?'s':''} in collection`;
+  if(!cans.length){
+    el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="big">Empty collection</span>Add your first can to start logging.</div>`;
+    return;
+  }
+  if(!list.length){ el.innerHTML = `<div class="dim mono" style="grid-column:1/-1;padding:10px">No match — try “Add a new can”.</div>`; return; }
+  el.innerHTML = list.map(c=>`
+    <div class="can-card" data-id="${c.id}" ${c.times_eaten?`title="eaten ${c.times_eaten}×"`:''}>
+      ${c.times_eaten?`<span class="eaten-badge">${c.times_eaten}×</span>`:''}
+      <div style="margin-bottom:8px">${chip(c.type)}</div>
+      <div class="cc-brand">${esc(c.brand)}</div>
+      ${c.product?`<div class="cc-product">${esc(c.product)}</div>`:''}
+      <div class="cc-figs">
+        <span>${c.avg_grams?`avg <b>${num(c.avg_grams)}g</b>`:'<span class="dim">not eaten yet</span>'}</span>
+        ${c.label_weight?`<span class="dim">label ${num(c.label_weight)}g</span>`:''}
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.can-card').forEach(card=>card.onclick=()=>pickCan(+card.dataset.id));
+}
+
+function pickCan(id){
+  pickedCan = cans.find(c=>c.id===id);
+  document.getElementById('step2').style.display='block';
+  document.getElementById('pickedTag').innerHTML = `// ${esc(pickedCan.brand)}${pickedCan.product?' — '+esc(pickedCan.product):''}`;
+  const start = pickedCan.avg_grams ? Math.round(pickedCan.avg_grams) : (pickedCan.label_weight ? Math.round(pickedCan.label_weight*0.7) : 80);
+  if(!dial){
+    dial = new GramsDial(document.getElementById('dialMount'), { value:start, onChange:updateLive });
+  } else { dial.set(start); }
+  if(pickedCan.default_price) document.getElementById('price').value = pickedCan.default_price;
+  updateLive();
+  document.getElementById('step2').scrollIntoView({behavior:'smooth'});
+}
+
+function updateLive(){
+  if(!pickedCan) return;
+  const d = dial ? dial.value : 0;
+  const p = parseFloat(document.getElementById('price').value);
+  const el = document.getElementById('liveCalc');
+  if(!d||!p){ el.textContent='Enter price to see value…'; return; }
+  const prot = pickedCan.protein_per_100 || 25;
+  const pg = p/(d/100), pp = p/(d*prot/100);
+  el.innerHTML = `This meal: <b style="color:var(--oil)">${pg.toFixed(2)}</b> ﷼/100g · <b style="color:var(--oil)">${pp.toFixed(3)}</b> ﷼/g protein · ~<b style="color:var(--oil)">${(d*prot/100).toFixed(0)}g</b> protein`;
+}
+document.getElementById('price').addEventListener('input', updateLive);
+
+document.getElementById('saveMeal').onclick = async ()=>{
+  if(!pickedCan) return;
+  const price = parseFloat(document.getElementById('price').value);
+  if(!dial.value || !price){ alert('Need drained grams and price.'); return; }
+  const dateVal = document.getElementById('date').value;
+  const eaten_at = dateVal ? new Date(dateVal).getTime() : Date.now();
+  await API.post('/meals', { can_id:pickedCan.id, drained:dial.value, price, note:document.getElementById('note').value, eaten_at });
+  location.href = '/can?id='+pickedCan.id;
+};
+
+/* ---- search ---- */
+document.getElementById('canSearch').addEventListener('input', e=>renderPicker(e.target.value));
+
+/* ---- add-can modal ---- */
+const modal = document.getElementById('canModal');
+document.getElementById('addCanBtn').onclick = ()=>modal.classList.add('open');
+document.getElementById('closeModal').onclick = ()=>modal.classList.remove('open');
+modal.onclick = e=>{ if(e.target===modal) modal.classList.remove('open'); };
+
+function renderTypePicker(){
+  const el = document.getElementById('typePicker');
+  el.innerHTML = types.map(t=>`<button type="button" class="chip" data-id="${t.id}" style="color:${t.color};cursor:pointer;background:transparent"><span class="dot"></span>${esc(t.name)}</button>`).join('');
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    selectedType = +b.dataset.id;
+    el.querySelectorAll('button').forEach(x=>x.style.background='transparent');
+    b.style.background='rgba(127,212,224,0.14)';
+  });
+}
+
+document.getElementById('saveCan').onclick = async ()=>{
+  const brand = document.getElementById('m_brand').value.trim();
+  if(!brand){ alert('Brand required.'); return; }
+  const can = await API.post('/cans', {
+    brand,
+    product: document.getElementById('m_product').value,
+    type_id: selectedType,
+    label_weight: parseFloat(document.getElementById('m_label').value)||null,
+    protein_per_100: parseFloat(document.getElementById('m_protein').value)||null,
+    notes: document.getElementById('m_notes').value,
+  });
+  cans.push(can);
+  modal.classList.remove('open');
+  ['m_brand','m_product','m_label','m_protein','m_notes'].forEach(id=>document.getElementById(id).value='');
+  selectedType=null;
+  renderPicker();
+  pickCan(can.id);
+};
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+/* ---- Grams dial + steppers ---- */
+.grams-picker{background:var(--abyss);border:1px solid var(--line);padding:22px 20px;text-align:center}
+.grams-readout{font-family:'Oswald',sans-serif;font-weight:700;font-size:64px;line-height:1;
+  color:var(--oil);letter-spacing:-.02em}
+.grams-readout small{font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--paper-dim);
+  font-weight:400;letter-spacing:.1em;margin-left:6px}
+.grams-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--foam);opacity:.75;margin-bottom:14px}
+
+/* dial track */
+.dial{position:relative;height:64px;margin:18px 0 14px;user-select:none;touch-action:none;cursor:grab}
+.dial:active{cursor:grabbing}
+.dial-track{position:absolute;inset:0;overflow:hidden;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--deep)}
+.dial-ticks{position:absolute;top:0;bottom:0;left:0;will-change:transform}
+.tick{position:absolute;top:0;width:1px;background:var(--line)}
+.tick.major{background:var(--foam);opacity:.5;width:2px}
+.tick-num{position:absolute;bottom:4px;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  color:var(--paper-dim);transform:translateX(-50%)}
+.dial-center{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:var(--oil);
+  transform:translateX(-50%);box-shadow:0 0 10px rgba(217,164,65,0.6);z-index:2}
+.dial-center::after{content:'';position:absolute;top:-5px;left:50%;transform:translateX(-50%);
+  border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid var(--oil)}
+
+/* steppers */
+.steppers{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.step-btn{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;
+  background:var(--deep);border:1px solid var(--line);color:var(--paper);
+  padding:9px 14px;cursor:pointer;transition:.12s;min-width:56px}
+.step-btn:hover{background:var(--brine);color:var(--abyss);border-color:var(--brine)}
+.step-btn:active{transform:translateY(1px)}
+.step-btn.minus{color:var(--flesh)}
+.step-btn.plus{color:var(--good)}

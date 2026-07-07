@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Board · Tuna Ledger</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .board-tabs{display:flex;gap:2px;margin-bottom:16px;flex-wrap:wrap}
+  .board-tabs button{background:var(--deep);border:1px solid var(--line);color:var(--paper-dim);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;padding:9px 13px;
+    cursor:pointer;text-transform:uppercase;transition:.15s}
+  .board-tabs button:hover{color:var(--paper)}
+  .board-tabs button.active{background:var(--brine);color:var(--abyss);border-color:var(--brine);font-weight:600}
+  .board{border:1px solid var(--line)}
+  .brow{display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;
+    padding:14px 16px;border-bottom:1px solid var(--line);background:var(--deep);transition:.15s;cursor:pointer}
+  .brow:last-child{border-bottom:none}
+  .brow:hover{background:var(--steel)}
+  .brow .rank{font-family:'Oswald',sans-serif;font-weight:700;font-size:22px;color:var(--oil-dim);text-align:center}
+  .brow:first-child .rank{color:var(--oil)}
+  .bname{font-family:'Oswald',sans-serif;font-weight:500;font-size:17px;text-transform:uppercase;letter-spacing:.02em}
+  .bmeta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--paper-dim);opacity:.7;margin-top:3px;display:flex;align-items:center;gap:8px}
+  .bval{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;color:var(--foam);text-align:right;white-space:nowrap}
+  .bval small{display:block;font-size:9px;color:var(--paper-dim);opacity:.7;font-weight:400;letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
+  .board-note{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--paper-dim);opacity:.75;margin-top:12px;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">Price index</div>
+    <h1>The <span class="fin">Board</span></h1>
+    <p>Your brands ranked. Switch views to rank by what matters — protein value, grams, or how little water they hide.</p>
+  </header>
+
+  <div class="board-tabs" id="tabs"></div>
+  <div class="board" id="board"></div>
+  <div class="board-note" id="note"></div>
+
+  <footer>The Tuna Ledger</footer>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+document.getElementById('nav').innerHTML = renderNav('board');
+
+const BOARDS = {
+  protein:{label:'Cheapest protein', unit:'﷼/g protein', fmt:v=>num(v,3), sub:c=>`${num(c.avg_protein_g)}g protein/can`,
+    note:'Lower is better — most protein for your money. The one that matters if you eat tuna for protein.'},
+  gram:{label:'Cheapest tuna', unit:'﷼/100g', fmt:v=>num(v,2), sub:c=>`${num(c.avg_grams)}g/can avg`,
+    note:'Lower is better — cheapest drained tuna by weight, protein aside.'},
+  grams:{label:'Most grams', unit:'g/can avg', fmt:v=>num(v), sub:c=>`over ${c.times_eaten} can${c.times_eaten>1?'s':''}`,
+    note:'Higher is better — which brand gives the most tuna per can after draining.'},
+  drain:{label:'Best drain ratio', unit:'drained/label', fmt:v=>v==null?'—':num(v*100)+'%', sub:c=>`${num(c.avg_grams)}g drained avg`,
+    note:'Higher is better — real tuna vs water & oil you pour away. Needs labeled net weight on the can.'},
+  most:{label:'Most eaten', unit:'cans logged', fmt:v=>num(v), sub:c=>`${num(c.avg_grams)}g avg`,
+    note:'Your personal favourites by sheer frequency.'},
+};
+const VAL = {
+  protein:c=>c.avg_per_protein, gram:c=>c.avg_per100, grams:c=>c.avg_grams, drain:c=>c.drain_ratio, most:c=>c.times_eaten
+};
+let current='protein';
+
+function renderTabs(){
+  document.getElementById('tabs').innerHTML = Object.entries(BOARDS).map(([k,b])=>
+    `<button data-b="${k}" class="${k===current?'active':''}">${b.label}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach(btn=>btn.onclick=()=>{current=btn.dataset.b;renderTabs();load();});
+}
+
+async function load(){
+  const cfg = BOARDS[current];
+  document.getElementById('note').textContent = cfg.note;
+  const rows = await API.get('/rankings/'+current);
+  const el = document.getElementById('board');
+  if(!rows.length){
+    el.innerHTML = `<div class="brow" style="grid-template-columns:1fr;cursor:default"><div class="bmeta">No data yet — log some meals first.</div></div>`;
+    return;
+  }
+  el.innerHTML = rows.map((c,i)=>`
+    <div class="brow" onclick="location.href='/can?id=${c.id}'">
+      <div class="rank">${i+1}</div>
+      <div>
+        <div class="bname">${esc(c.brand)}</div>
+        <div class="bmeta">${chip(c.type)} ${cfg.sub(c)}</div>
+      </div>
+      <div class="bval">${cfg.fmt(VAL[current](c))}<small>${cfg.unit}</small></div>
+    </div>`).join('');
+}
+renderTabs();
+load();
+</script>
+</body>
+</html>

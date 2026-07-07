@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Tuna Ledger</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="nav"></div>
+<div class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">Specimen Log · Drained Weight · Price Index</div>
+    <h1>The Tuna <span class="fin">Ledger</span></h1>
+    <p>Every can weighed after draining. Build your collection, log each meal, and let the board rank which tuna gives you the most protein per riyal.</p>
+  </header>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="sec-head"><h2>Recent Meals</h2><span class="tag">// latest catches</span></div>
+  <div id="recent"></div>
+
+  <footer>The Tuna Ledger · full-stack edition · data stored in SQLite</footer>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+document.getElementById('nav').innerHTML = renderNav('index');
+
+async function init(){
+  const [stats, meals] = await Promise.all([API.get('/stats'), API.get('/meals')]);
+  renderStrip(stats);
+  renderRecent(meals.slice(0,6));
+}
+
+function renderStrip(s){
+  const best = s.best_value ? `${s.best_value.brand}` : '—';
+  document.getElementById('strip').innerHTML = `
+    <div class="stat"><div class="k">Cans in collection</div><div class="v">${s.total_cans}</div></div>
+    <div class="stat"><div class="k">Meals logged</div><div class="v">${s.total_meals}</div></div>
+    <div class="stat"><div class="k">Total spent</div><div class="v oil">${num(s.total_spent,2)}<small> ﷼</small></div></div>
+    <div class="stat"><div class="k">Avg grams / meal</div><div class="v">${s.avg_grams==null?'—':num(s.avg_grams)}<small> g</small></div></div>
+    <div class="stat"><div class="k">Best protein value</div><div class="v small">${esc(best)}</div></div>`;
+}
+
+function renderRecent(meals){
+  const el = document.getElementById('recent');
+  if(!meals.length){
+    el.innerHTML = `<div class="empty-state"><span class="big">No meals yet</span>
+      Add a can to your collection, then log your first tuna.<br><br>
+      <a class="btn primary" href="/log">Log a Meal →</a></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="card-grid">` + meals.map(m=>`
+    <div class="can-card" onclick="location.href='/can?id=${m.can_id}'">
+      <div style="margin-bottom:8px">${chip(m.type)}</div>
+      <div class="cc-brand">${esc(m.brand)}</div>
+      ${m.product?`<div class="cc-product">${esc(m.product)}</div>`:''}
+      <div class="cc-figs">
+        <span><b>${num(m.drained)}g</b> drained · <b>${money(m.price)}</b></span>
+        <span><b>${num(m.per_protein,3)}</b> ﷼/g protein</span>
+        <span class="dim">${fmtDate(m.eaten_at)}</span>
+      </div>
+    </div>`).join('') + `</div>`;
+}
+init();
+</script>
+</body>
+</html>

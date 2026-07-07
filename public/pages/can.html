@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Can · Tuna Ledger</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .entry{border:1px solid var(--line);border-left:3px solid var(--brine);background:var(--deep);
+    padding:15px 17px;margin-bottom:11px;position:relative}
+  .entry-date{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--paper-dim);opacity:.75}
+  .entry-figs{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0;font-family:'IBM Plex Mono',monospace;font-size:12px}
+  .fig{color:var(--paper-dim)} .fig b{color:var(--foam);font-weight:600}
+  .fig.head b{color:var(--oil)}
+  .entry-note{font-family:'Bitter',serif;font-style:italic;font-size:14px;color:var(--paper);opacity:.9;
+    border-top:1px solid var(--line);padding-top:9px;margin-top:6px}
+  .del{position:absolute;top:13px;right:13px;background:none;border:1px solid var(--line);color:var(--paper-dim);
+    font-family:'IBM Plex Mono',monospace;font-size:10px;padding:4px 8px;cursor:pointer;letter-spacing:.1em;transition:.15s}
+  .del:hover{border-color:var(--flesh);color:var(--flesh)}
+  .backlink{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--foam);opacity:.8;display:inline-block;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div class="wrap">
+  <div id="content"></div>
+  <footer>The Tuna Ledger</footer>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+document.getElementById('nav').innerHTML = renderNav('collection');
+const id = new URLSearchParams(location.search).get('id');
+
+async function load(){
+  let can;
+  try { can = await API.get('/cans/'+id); }
+  catch(e){ document.getElementById('content').innerHTML = '<p class="dim mono" style="padding:40px 0">Can not found.</p>'; return; }
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <a class="backlink" href="/collection">← Collection</a>
+    <header class="page-head">
+      <div class="eyebrow">${chip(can.type)}</div>
+      <h1>${esc(can.brand)}</h1>
+      ${can.product?`<p style="font-style:italic;font-family:'Bitter',serif;font-size:16px;color:var(--paper);opacity:.85;margin-top:6px">${esc(can.product)}</p>`:''}
+      ${can.notes?`<p>${esc(can.notes)}</p>`:''}
+    </header>
+
+    <div class="strip">
+      <div class="stat"><div class="k">Times eaten</div><div class="v">${can.times_eaten}</div></div>
+      <div class="stat"><div class="k">Avg grams</div><div class="v">${can.avg_grams==null?'—':num(can.avg_grams)}<small> g</small></div></div>
+      <div class="stat"><div class="k">Protein value</div><div class="v oil small">${can.avg_per_protein==null?'—':num(can.avg_per_protein,3)}<small> ﷼/g</small></div></div>
+      <div class="stat"><div class="k">Drain ratio</div><div class="v small">${can.drain_ratio==null?'—':num(can.drain_ratio*100)+'%'}</div></div>
+      <div class="stat"><div class="k">Total spent</div><div class="v oil small">${num(can.total_spent,2)}<small> ﷼</small></div></div>
+    </div>
+
+    <div class="sec-head"><h2>Meal History</h2><span class="tag">// ${can.meals.length} logged</span>
+      <a class="btn" style="margin-left:auto;padding:7px 14px;font-size:12px" href="/log">＋ Log again</a></div>
+    <div id="meals"></div>
+    <div style="margin-top:24px"><button class="btn" id="delCan" style="border-color:var(--flesh);color:var(--flesh)">Delete this can &amp; all its meals</button></div>
+  `;
+
+  const m = document.getElementById('meals');
+  if(!can.meals.length){
+    m.innerHTML = `<div class="empty-state">Never eaten. <a href="/log" style="color:var(--foam)">Log a meal →</a></div>`;
+  } else {
+    m.innerHTML = can.meals.map(meal=>{
+      const prot = can.protein_per_100 || 25;
+      const pg = meal.price/(meal.drained/100);
+      const pp = meal.price/(meal.drained*prot/100);
+      const r = can.label_weight ? meal.drained/can.label_weight : null;
+      return `<div class="entry">
+        <button class="del" data-id="${meal.id}">✕</button>
+        <div class="entry-date">${fmtDateTime(meal.eaten_at)}</div>
+        <div class="entry-figs">
+          <span class="fig"><b>${num(meal.drained)}g</b> drained</span>
+          <span class="fig"><b>${money(meal.price)}</b> paid</span>
+          <span class="fig"><b>${num(pg,2)}</b> ﷼/100g</span>
+          <span class="fig head"><b>${num(pp,3)}</b> ﷼/g protein</span>
+          ${r!=null?`<span class="fig"><b>${num(r*100)}%</b> drain</span>`:''}
+        </div>
+        ${meal.note?`<div class="entry-note">“${esc(meal.note)}”</div>`:''}
+      </div>`;
+    }).join('');
+    m.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{
+      await API.del('/meals/'+b.dataset.id); load();
+    });
+  }
+
+  document.getElementById('delCan').onclick = async ()=>{
+    if(confirm('Delete this can and every meal logged against it?')){
+      await API.del('/cans/'+id); location.href='/collection';
+    }
+  };
+}
+load();
+</script>
+</body>
+</html>

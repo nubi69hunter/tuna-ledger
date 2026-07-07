@@ -1,0 +1,15 @@
+{
+  "name": "tuna-ledger",
+  "version": "1.0.0",
+  "description": "The Tuna Ledger — a full-stack tracker for your tuna can collection, drained weight, and price-per-protein rankings.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "node --no-warnings --watch server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": { "node": ">=22.5.0" }
+}
