@@ -1,40 +1,48 @@
 import { Router } from 'express';
-import db from './db.js';
+import supabase from './db.js';
 import { per100g, proteinGrams, perProtein, drainRatio, DEFAULT_PROTEIN } from './metrics.js';
 
 const router = Router();
 
 /* ---------------- TYPES ---------------- */
-router.get('/types', (req, res) => {
-  res.json(db.prepare('SELECT * FROM can_types ORDER BY sort, name').all());
+router.get('/types', async (req, res) => {
+  const { data, error } = await supabase.from('can_types').select('*').order('sort').order('name');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-router.post('/types', (req, res) => {
+router.post('/types', async (req, res) => {
   const { name, color } = req.body;
   if (!name || !color) return res.status(400).json({ error: 'name and color required' });
-  try {
-    const info = db.prepare('INSERT INTO can_types (name, color, sort) VALUES (?,?,?)')
-      .run(name.trim(), color, 99);
-    res.status(201).json(db.prepare('SELECT * FROM can_types WHERE id=?').get(Number(info.lastInsertRowid)));
-  } catch (e) {
-    res.status(409).json({ error: 'type already exists' });
-  }
+  const { data, error } = await supabase
+    .from('can_types')
+    .insert({ name: name.trim(), color, sort: 99 })
+    .select()
+    .single();
+  if (error) return res.status(409).json({ error: 'type already exists' });
+  res.status(201).json(data);
 });
 
 /* ---------------- CANS (the collection) ---------------- */
 // Each can comes back enriched with its type and aggregated meal stats.
-function canWithStats(row) {
-  const meals = db.prepare('SELECT * FROM meals WHERE can_id=?').all(row.id);
-  const n = meals.length;
-  const gTot = meals.reduce((s, m) => s + m.drained, 0);
-  const priceTot = meals.reduce((s, m) => s + m.price, 0);
-  const per100Tot = meals.reduce((s, m) => s + per100g(m.price, m.drained), 0);
-  const perProtTot = meals.reduce((s, m) => s + perProtein(m.price, m.drained, row.protein_per_100), 0);
-  const protGTot = meals.reduce((s, m) => s + proteinGrams(m.drained, row.protein_per_100), 0);
+async function canWithStats(row) {
+  const [{ data: meals }, type] = await Promise.all([
+    supabase.from('meals').select('*').eq('can_id', row.id),
+    row.type_id
+      ? supabase.from('can_types').select('*').eq('id', row.type_id).maybeSingle().then(r => r.data)
+      : Promise.resolve(null),
+  ]);
+  const mealList = meals || [];
+  const n = mealList.length;
+  const gTot = mealList.reduce((s, m) => s + m.drained, 0);
+  const priceTot = mealList.reduce((s, m) => s + m.price, 0);
+  const per100Tot = mealList.reduce((s, m) => s + per100g(m.price, m.drained), 0);
+  const perProtTot = mealList.reduce((s, m) => s + perProtein(m.price, m.drained, row.protein_per_100), 0);
+  const protGTot = mealList.reduce((s, m) => s + proteinGrams(m.drained, row.protein_per_100), 0);
   const ratio = drainRatio(gTot / (n || 1), row.label_weight);
   return {
     ...row,
-    type: row.type_id ? db.prepare('SELECT * FROM can_types WHERE id=?').get(row.type_id) : null,
+    type,
     times_eaten: n,
     avg_grams: n ? gTot / n : null,
     total_spent: priceTot,
@@ -45,55 +53,88 @@ function canWithStats(row) {
   };
 }
 
-router.get('/cans', (req, res) => {
-  const rows = db.prepare('SELECT * FROM cans ORDER BY brand, product').all();
-  res.json(rows.map(canWithStats));
+router.get('/cans', async (req, res) => {
+  const { data, error } = await supabase.from('cans').select('*').order('brand').order('product');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(await Promise.all(data.map(canWithStats)));
 });
 
-router.get('/cans/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM cans WHERE id=?').get(req.params.id);
+router.get('/cans/:id', async (req, res) => {
+  const { data: row, error } = await supabase.from('cans').select('*').eq('id', req.params.id).maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
   if (!row) return res.status(404).json({ error: 'not found' });
-  const can = canWithStats(row);
-  can.meals = db.prepare('SELECT * FROM meals WHERE can_id=? ORDER BY eaten_at DESC').all(row.id);
+  const can = await canWithStats(row);
+  const { data: meals } = await supabase
+    .from('meals')
+    .select('*')
+    .eq('can_id', row.id)
+    .order('eaten_at', { ascending: false });
+  can.meals = meals || [];
   res.json(can);
 });
 
-router.post('/cans', (req, res) => {
+router.post('/cans', async (req, res) => {
   const { brand, product, type_id, label_weight, default_price, protein_per_100, notes } = req.body;
   if (!brand || !brand.trim()) return res.status(400).json({ error: 'brand required' });
-  const info = db.prepare(`INSERT INTO cans
-    (brand, product, type_id, label_weight, default_price, protein_per_100, notes, created_at)
-    VALUES (?,?,?,?,?,?,?,?)`).run(
-    brand.trim(), product?.trim() || null, type_id || null,
-    label_weight || null, default_price || null, protein_per_100 || null,
-    notes?.trim() || null, Date.now()
-  );
-  res.status(201).json(canWithStats(db.prepare('SELECT * FROM cans WHERE id=?').get(Number(info.lastInsertRowid))));
+  const { data, error } = await supabase
+    .from('cans')
+    .insert({
+      brand: brand.trim(),
+      product: product?.trim() || null,
+      type_id: type_id || null,
+      label_weight: label_weight || null,
+      default_price: default_price || null,
+      protein_per_100: protein_per_100 || null,
+      notes: notes?.trim() || null,
+      created_at: Date.now(),
+    })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(await canWithStats(data));
 });
 
-router.put('/cans/:id', (req, res) => {
-  const existing = db.prepare('SELECT * FROM cans WHERE id=?').get(req.params.id);
+router.put('/cans/:id', async (req, res) => {
+  const { data: existing, error: fetchError } = await supabase
+    .from('cans')
+    .select('*')
+    .eq('id', req.params.id)
+    .maybeSingle();
+  if (fetchError) return res.status(500).json({ error: fetchError.message });
   if (!existing) return res.status(404).json({ error: 'not found' });
   const { brand, product, type_id, label_weight, default_price, protein_per_100, notes } = req.body;
-  db.prepare(`UPDATE cans SET brand=?, product=?, type_id=?, label_weight=?,
-    default_price=?, protein_per_100=?, notes=? WHERE id=?`).run(
-    brand?.trim() || existing.brand, product?.trim() ?? existing.product,
-    type_id ?? existing.type_id, label_weight ?? existing.label_weight,
-    default_price ?? existing.default_price, protein_per_100 ?? existing.protein_per_100,
-    notes?.trim() ?? existing.notes, req.params.id
-  );
-  res.json(canWithStats(db.prepare('SELECT * FROM cans WHERE id=?').get(req.params.id)));
+  const { data, error } = await supabase
+    .from('cans')
+    .update({
+      brand: brand?.trim() || existing.brand,
+      product: product?.trim() ?? existing.product,
+      type_id: type_id ?? existing.type_id,
+      label_weight: label_weight ?? existing.label_weight,
+      default_price: default_price ?? existing.default_price,
+      protein_per_100: protein_per_100 ?? existing.protein_per_100,
+      notes: notes?.trim() ?? existing.notes,
+    })
+    .eq('id', req.params.id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(await canWithStats(data));
 });
 
-router.delete('/cans/:id', (req, res) => {
-  db.prepare('DELETE FROM cans WHERE id=?').run(req.params.id);
+router.delete('/cans/:id', async (req, res) => {
+  const { error } = await supabase.from('cans').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
 /* ---------------- MEALS (the log) ---------------- */
-function mealEnriched(m) {
-  const can = db.prepare('SELECT * FROM cans WHERE id=?').get(m.can_id);
-  const type = can?.type_id ? db.prepare('SELECT * FROM can_types WHERE id=?').get(can.type_id) : null;
+async function mealEnriched(m) {
+  const { data: can } = await supabase.from('cans').select('*').eq('id', m.can_id).maybeSingle();
+  let type = null;
+  if (can?.type_id) {
+    const { data } = await supabase.from('can_types').select('*').eq('id', can.type_id).maybeSingle();
+    type = data;
+  }
   return {
     ...m,
     brand: can?.brand, product: can?.product, type,
@@ -105,24 +146,36 @@ function mealEnriched(m) {
   };
 }
 
-router.get('/meals', (req, res) => {
-  const rows = db.prepare('SELECT * FROM meals ORDER BY eaten_at DESC').all();
-  res.json(rows.map(mealEnriched));
+router.get('/meals', async (req, res) => {
+  const { data, error } = await supabase.from('meals').select('*').order('eaten_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(await Promise.all(data.map(mealEnriched)));
 });
 
-router.post('/meals', (req, res) => {
+router.post('/meals', async (req, res) => {
   const { can_id, drained, price, note, eaten_at } = req.body;
   if (!can_id || !drained || price == null)
     return res.status(400).json({ error: 'can_id, drained, price required' });
-  const can = db.prepare('SELECT id FROM cans WHERE id=?').get(can_id);
+  const { data: can } = await supabase.from('cans').select('id').eq('id', can_id).maybeSingle();
   if (!can) return res.status(400).json({ error: 'unknown can' });
-  const info = db.prepare(`INSERT INTO meals (can_id, drained, price, note, eaten_at)
-    VALUES (?,?,?,?,?)`).run(can_id, drained, price, note?.trim() || null, eaten_at || Date.now());
-  res.status(201).json(mealEnriched(db.prepare('SELECT * FROM meals WHERE id=?').get(Number(info.lastInsertRowid))));
+  const { data, error } = await supabase
+    .from('meals')
+    .insert({
+      can_id,
+      drained,
+      price,
+      note: note?.trim() || null,
+      eaten_at: eaten_at || Date.now(),
+    })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(await mealEnriched(data));
 });
 
-router.delete('/meals/:id', (req, res) => {
-  db.prepare('DELETE FROM meals WHERE id=?').run(req.params.id);
+router.delete('/meals/:id', async (req, res) => {
+  const { error } = await supabase.from('meals').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
@@ -135,19 +188,26 @@ const BOARDS = {
   most:    { val: c => c.times_eaten,     asc: false },
 };
 
-router.get('/rankings/:board', (req, res) => {
+router.get('/rankings/:board', async (req, res) => {
   const cfg = BOARDS[req.params.board];
   if (!cfg) return res.status(404).json({ error: 'unknown board' });
-  let cans = db.prepare('SELECT * FROM cans').all().map(canWithStats)
+  const { data, error } = await supabase.from('cans').select('*');
+  if (error) return res.status(500).json({ error: error.message });
+  let cans = (await Promise.all(data.map(canWithStats)))
     .filter(c => c.times_eaten > 0 && cfg.val(c) != null && !isNaN(cfg.val(c)));
   cans.sort((a, b) => cfg.asc ? cfg.val(a) - cfg.val(b) : cfg.val(b) - cfg.val(a));
   res.json(cans);
 });
 
 /* ---------------- STATS ---------------- */
-router.get('/stats', (req, res) => {
-  const meals = db.prepare('SELECT * FROM meals').all();
-  const cans = db.prepare('SELECT * FROM cans').all().map(canWithStats);
+router.get('/stats', async (req, res) => {
+  const [{ data: meals, error: mealsError }, { data: cansRaw, error: cansError }] = await Promise.all([
+    supabase.from('meals').select('*'),
+    supabase.from('cans').select('*'),
+  ]);
+  if (mealsError) return res.status(500).json({ error: mealsError.message });
+  if (cansError) return res.status(500).json({ error: cansError.message });
+  const cans = await Promise.all(cansRaw.map(canWithStats));
   const totalCans = cans.length;
   const totalMeals = meals.length;
   const totalSpent = meals.reduce((s, m) => s + m.price, 0);

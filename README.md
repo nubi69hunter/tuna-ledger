@@ -4,6 +4,10 @@ A full-stack website for tracking your tuna can collection, drained weight, and 
 
 ## Run it
 
+1. Create a Supabase project and run `supabase/schema.sql` against it (SQL editor, or `supabase db push`).
+2. Copy `.env.example` to `.env` and fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from your project's API settings.
+3. Install and start:
+
 ```bash
 npm install
 npm start
@@ -11,7 +15,7 @@ npm start
 
 Then open **http://localhost:3000**
 
-Requires **Node.js 22.5+** (uses the built-in `node:sqlite` — no native compilation, only Express is installed).
+Requires **Node.js 22.5+**.
 
 ## What's inside
 
@@ -28,13 +32,13 @@ Requires **Node.js 22.5+** (uses the built-in `node:sqlite` — no native compil
 - Colored type labels: Water, Olive oil, Sunflower oil, Brine (add your own via `POST /api/types`)
 - Drain ratio (drained ÷ labeled weight), price/100g, price per gram of protein
 
-## Data model (SQLite)
+## Data model (Supabase Postgres)
 
 - `can_types` — label name + color
 - `cans` — your reusable catalog (brand, product, type, label weight, protein/100g, notes)
 - `meals` — each logged meal referencing a can (drained grams, price, note, date)
 
-Database lives at `data/tuna.db`.
+Schema lives in `supabase/schema.sql`. The server talks to Postgres via the Supabase JS client (`@supabase/supabase-js`), configured with `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## API
 
@@ -48,6 +52,6 @@ Database lives at `data/tuna.db`.
 | GET | `/api/rankings/:board` | `protein`\|`gram`\|`grams`\|`drain`\|`most` |
 | GET | `/api/stats` | dashboard totals |
 
-## Swapping the database later
+## Database access
 
-All SQL lives in `server/db.js` and `server/routes.js`. To move to Postgres, replace the `node:sqlite` calls with your driver of choice — the queries are plain SQL.
+`server/db.js` creates the shared Supabase client and seeds default `can_types` if the table is empty. `server/routes.js` uses that client's query builder for all reads/writes — no raw SQL.
