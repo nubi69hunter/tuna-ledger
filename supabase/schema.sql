@@ -26,3 +26,11 @@ create table if not exists meals (
   note text,
   eaten_at bigint not null
 );
+
+-- Lock the tables down to server-side (service-role) access only. RLS is
+-- enabled with no policies, so anon/authenticated get zero access via the
+-- public API; service_role bypasses RLS entirely and keeps full access,
+-- which is what server/db.js authenticates as.
+alter table can_types enable row level security;
+alter table cans enable row level security;
+alter table meals enable row level security;
