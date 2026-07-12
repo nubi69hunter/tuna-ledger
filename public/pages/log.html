@@ -66,11 +66,11 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/auth.js"></script>
 <script src="/js/common.js"></script>
 <script src="/js/dial.js"></script>
 <script>
-document.getElementById('nav').innerHTML = renderNav('log');
-
 let cans = [], types = [], selectedType = null, pickedCan = null, dial = null;
 
 async function init(){
@@ -177,7 +177,11 @@ document.getElementById('saveCan').onclick = async ()=>{
   pickCan(can.id);
 };
 
-init();
+(async () => {
+  const session = await initNav('log');
+  if (!session) return;
+  init();
+})();
 </script>
 </body>
 </html>

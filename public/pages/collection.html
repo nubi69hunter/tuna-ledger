@@ -33,9 +33,10 @@
   <footer>The Tuna Ledger</footer>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/auth.js"></script>
 <script src="/js/common.js"></script>
 <script>
-document.getElementById('nav').innerHTML = renderNav('collection');
 let cans = [], types = [];
 
 async function init(){
@@ -91,7 +92,11 @@ function render(){
 }
 
 ['search','typeFilter','sort'].forEach(id=>document.getElementById(id).addEventListener('input',render));
-init();
+(async () => {
+  const session = await initNav('collection');
+  if (!session) return;
+  init();
+})();
 </script>
 </body>
 </html>

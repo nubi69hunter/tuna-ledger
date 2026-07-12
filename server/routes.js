@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import supabase from './db.js';
+import { requireAuth } from './auth.js';
 import { per100g, proteinGrams, perProtein, drainRatio, DEFAULT_PROTEIN } from './metrics.js';
 
 const router = Router();
+router.use(requireAuth);
 
 /* ---------------- TYPES ---------------- */
 router.get('/types', async (req, res) => {
-  const { data, error } = await supabase.from('can_types').select('*').order('sort').order('name');
+  const { data, error } = await req.supabase.from('can_types').select('*').order('sort').order('name');
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
@@ -14,7 +15,7 @@ router.get('/types', async (req, res) => {
 router.post('/types', async (req, res) => {
   const { name, color } = req.body;
   if (!name || !color) return res.status(400).json({ error: 'name and color required' });
-  const { data, error } = await supabase
+  const { data, error } = await req.supabase
     .from('can_types')
     .insert({ name: name.trim(), color, sort: 99 })
     .select()
@@ -25,7 +26,7 @@ router.post('/types', async (req, res) => {
 
 /* ---------------- CANS (the collection) ---------------- */
 // Each can comes back enriched with its type and aggregated meal stats.
-async function canWithStats(row) {
+async function canWithStats(supabase, row) {
   const [{ data: meals }, type] = await Promise.all([
     supabase.from('meals').select('*').eq('can_id', row.id),
     row.type_id
@@ -54,17 +55,17 @@ async function canWithStats(row) {
 }
 
 router.get('/cans', async (req, res) => {
-  const { data, error } = await supabase.from('cans').select('*').order('brand').order('product');
+  const { data, error } = await req.supabase.from('cans').select('*').order('brand').order('product');
   if (error) return res.status(500).json({ error: error.message });
-  res.json(await Promise.all(data.map(canWithStats)));
+  res.json(await Promise.all(data.map(row => canWithStats(req.supabase, row))));
 });
 
 router.get('/cans/:id', async (req, res) => {
-  const { data: row, error } = await supabase.from('cans').select('*').eq('id', req.params.id).maybeSingle();
+  const { data: row, error } = await req.supabase.from('cans').select('*').eq('id', req.params.id).maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
   if (!row) return res.status(404).json({ error: 'not found' });
-  const can = await canWithStats(row);
-  const { data: meals } = await supabase
+  const can = await canWithStats(req.supabase, row);
+  const { data: meals } = await req.supabase
     .from('meals')
     .select('*')
     .eq('can_id', row.id)
@@ -76,9 +77,10 @@ router.get('/cans/:id', async (req, res) => {
 router.post('/cans', async (req, res) => {
   const { brand, product, type_id, label_weight, default_price, protein_per_100, notes } = req.body;
   if (!brand || !brand.trim()) return res.status(400).json({ error: 'brand required' });
-  const { data, error } = await supabase
+  const { data, error } = await req.supabase
     .from('cans')
     .insert({
+      user_id: req.user.id,
       brand: brand.trim(),
       product: product?.trim() || null,
       type_id: type_id || null,
@@ -91,11 +93,11 @@ router.post('/cans', async (req, res) => {
     .select()
     .single();
   if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(await canWithStats(data));
+  res.status(201).json(await canWithStats(req.supabase, data));
 });
 
 router.put('/cans/:id', async (req, res) => {
-  const { data: existing, error: fetchError } = await supabase
+  const { data: existing, error: fetchError } = await req.supabase
     .from('cans')
     .select('*')
     .eq('id', req.params.id)
@@ -103,7 +105,7 @@ router.put('/cans/:id', async (req, res) => {
   if (fetchError) return res.status(500).json({ error: fetchError.message });
   if (!existing) return res.status(404).json({ error: 'not found' });
   const { brand, product, type_id, label_weight, default_price, protein_per_100, notes } = req.body;
-  const { data, error } = await supabase
+  const { data, error } = await req.supabase
     .from('cans')
     .update({
       brand: brand?.trim() || existing.brand,
@@ -118,17 +120,17 @@ router.put('/cans/:id', async (req, res) => {
     .select()
     .single();
   if (error) return res.status(500).json({ error: error.message });
-  res.json(await canWithStats(data));
+  res.json(await canWithStats(req.supabase, data));
 });
 
 router.delete('/cans/:id', async (req, res) => {
-  const { error } = await supabase.from('cans').delete().eq('id', req.params.id);
+  const { error } = await req.supabase.from('cans').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
 /* ---------------- MEALS (the log) ---------------- */
-async function mealEnriched(m) {
+async function mealEnriched(supabase, m) {
   const { data: can } = await supabase.from('cans').select('*').eq('id', m.can_id).maybeSingle();
   let type = null;
   if (can?.type_id) {
@@ -147,20 +149,21 @@ async function mealEnriched(m) {
 }
 
 router.get('/meals', async (req, res) => {
-  const { data, error } = await supabase.from('meals').select('*').order('eaten_at', { ascending: false });
+  const { data, error } = await req.supabase.from('meals').select('*').order('eaten_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
-  res.json(await Promise.all(data.map(mealEnriched)));
+  res.json(await Promise.all(data.map(m => mealEnriched(req.supabase, m))));
 });
 
 router.post('/meals', async (req, res) => {
   const { can_id, drained, price, note, eaten_at } = req.body;
   if (!can_id || !drained || price == null)
     return res.status(400).json({ error: 'can_id, drained, price required' });
-  const { data: can } = await supabase.from('cans').select('id').eq('id', can_id).maybeSingle();
+  const { data: can } = await req.supabase.from('cans').select('id').eq('id', can_id).maybeSingle();
   if (!can) return res.status(400).json({ error: 'unknown can' });
-  const { data, error } = await supabase
+  const { data, error } = await req.supabase
     .from('meals')
     .insert({
+      user_id: req.user.id,
       can_id,
       drained,
       price,
@@ -170,11 +173,11 @@ router.post('/meals', async (req, res) => {
     .select()
     .single();
   if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(await mealEnriched(data));
+  res.status(201).json(await mealEnriched(req.supabase, data));
 });
 
 router.delete('/meals/:id', async (req, res) => {
-  const { error } = await supabase.from('meals').delete().eq('id', req.params.id);
+  const { error } = await req.supabase.from('meals').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
@@ -191,9 +194,9 @@ const BOARDS = {
 router.get('/rankings/:board', async (req, res) => {
   const cfg = BOARDS[req.params.board];
   if (!cfg) return res.status(404).json({ error: 'unknown board' });
-  const { data, error } = await supabase.from('cans').select('*');
+  const { data, error } = await req.supabase.from('cans').select('*');
   if (error) return res.status(500).json({ error: error.message });
-  let cans = (await Promise.all(data.map(canWithStats)))
+  let cans = (await Promise.all(data.map(row => canWithStats(req.supabase, row))))
     .filter(c => c.times_eaten > 0 && cfg.val(c) != null && !isNaN(cfg.val(c)));
   cans.sort((a, b) => cfg.asc ? cfg.val(a) - cfg.val(b) : cfg.val(b) - cfg.val(a));
   res.json(cans);
@@ -202,12 +205,12 @@ router.get('/rankings/:board', async (req, res) => {
 /* ---------------- STATS ---------------- */
 router.get('/stats', async (req, res) => {
   const [{ data: meals, error: mealsError }, { data: cansRaw, error: cansError }] = await Promise.all([
-    supabase.from('meals').select('*'),
-    supabase.from('cans').select('*'),
+    req.supabase.from('meals').select('*'),
+    req.supabase.from('cans').select('*'),
   ]);
   if (mealsError) return res.status(500).json({ error: mealsError.message });
   if (cansError) return res.status(500).json({ error: cansError.message });
-  const cans = await Promise.all(cansRaw.map(canWithStats));
+  const cans = await Promise.all(cansRaw.map(row => canWithStats(req.supabase, row)));
   const totalCans = cans.length;
   const totalMeals = meals.length;
   const totalSpent = meals.reduce((s, m) => s + m.price, 0);

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In · Tuna Ledger</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-logo">Tuna<span>Ledger</span></div>
+  <div class="auth-sub">Specimen Log · Drained Weight · Price Index</div>
+  <div class="auth-card">
+    <h1>Log In</h1>
+    <div class="row"><label for="email">Email</label><input id="email" type="email" autocomplete="email"></div>
+    <div class="row"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password"></div>
+    <button class="btn primary full" id="loginBtn">Log In →</button>
+    <div class="auth-error" id="error"></div>
+    <div class="auth-divider">or</div>
+    <button class="btn google" type="button" id="googleBtn">Continue with Google</button>
+  </div>
+  <div class="auth-switch">New here? <a href="/signup">Create an account →</a></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/auth.js"></script>
+<script>
+(async () => {
+  const session = await Auth.getSession();
+  if (session) location.href = '/';
+})();
+
+document.getElementById('loginBtn').onclick = async () => {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errEl = document.getElementById('error');
+  errEl.textContent = '';
+  const { error } = await Auth.signIn(email, password);
+  if (error) { errEl.textContent = error.message; return; }
+  location.href = '/';
+};
+
+document.getElementById('googleBtn').onclick = () => Auth.signInWithGoogle();
+</script>
+</body>
+</html>
