@@ -13,6 +13,7 @@ app.use(express.json());
 // talk to Supabase Auth directly. Must come before the /api router below,
 // which requires a logged-in user.
 app.get('/api/config', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.json({ url: supabaseUrl, anonKey: supabaseAnonKey });
 });
 

@@ -6,7 +6,11 @@ const Auth = (() => {
     if (!clientPromise) {
       clientPromise = fetch('/api/config')
         .then(r => r.json())
-        .then(({ url, anonKey }) => window.supabase.createClient(url, anonKey));
+        .then(({ url, anonKey }) => {
+          if (!url || !anonKey) throw new Error('Supabase config missing url/anonKey');
+          return window.supabase.createClient(url, anonKey);
+        })
+        .catch(err => { clientPromise = null; throw err; }); // don't cache a failure forever
     }
     return clientPromise;
   }
@@ -43,11 +47,18 @@ const Auth = (() => {
     location.href = '/login';
   }
 
-  // Redirect to /login if there's no session; otherwise return it.
+  // Redirect to /login if there's no session (or if session lookup fails —
+  // safest default when we can't tell); otherwise return it.
   async function guard() {
-    const session = await getSession();
-    if (!session) { location.href = '/login'; return null; }
-    return session;
+    try {
+      const session = await getSession();
+      if (!session) { location.href = '/login'; return null; }
+      return session;
+    } catch (err) {
+      console.error('Auth.guard failed:', err);
+      location.href = '/login';
+      return null;
+    }
   }
 
   return { getClient, getSession, getAccessToken, signUp, signIn, signInWithGoogle, signOut, guard };

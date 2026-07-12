@@ -27,8 +27,10 @@
 <script src="/js/auth.js"></script>
 <script>
 (async () => {
-  const session = await Auth.getSession();
-  if (session) location.href = '/';
+  try {
+    const session = await Auth.getSession();
+    if (session) location.href = '/';
+  } catch (err) { console.error('Session check failed:', err); }
 })();
 
 document.getElementById('signupBtn').onclick = async () => {
