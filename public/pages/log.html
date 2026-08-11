@@ -66,8 +66,6 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/js/auth.js"></script>
 <script src="/js/common.js"></script>
 <script src="/js/dial.js"></script>
 <script>
@@ -177,11 +175,8 @@ document.getElementById('saveCan').onclick = async ()=>{
   pickCan(can.id);
 };
 
-(async () => {
-  const session = await initNav('log');
-  if (!session) return;
-  init();
-})();
+initNav('log');
+init();
 </script>
 </body>
 </html>

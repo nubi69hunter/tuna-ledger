@@ -1,13 +1,9 @@
-// ---- API client (attaches the current user's access token) ----
+// ---- API client ----
 const API = {
-  async _headers(extra = {}) {
-    const token = await Auth.getAccessToken();
-    return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
-  },
-  async get(path){ const r = await fetch('/api'+path, { headers: await API._headers() }); if(!r.ok) throw new Error(await r.text()); return r.json(); },
-  async post(path, body){ const r = await fetch('/api'+path,{method:'POST',headers: await API._headers({'Content-Type':'application/json'}),body:JSON.stringify(body)}); if(!r.ok) throw new Error(await r.text()); return r.json(); },
-  async put(path, body){ const r = await fetch('/api'+path,{method:'PUT',headers: await API._headers({'Content-Type':'application/json'}),body:JSON.stringify(body)}); if(!r.ok) throw new Error(await r.text()); return r.json(); },
-  async del(path){ const r = await fetch('/api'+path,{method:'DELETE', headers: await API._headers()}); if(!r.ok) throw new Error(await r.text()); return r.json(); },
+  async get(path){ const r = await fetch('/api'+path); if(!r.ok) throw new Error(await r.text()); return r.json(); },
+  async post(path, body){ const r = await fetch('/api'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error(await r.text()); return r.json(); },
+  async put(path, body){ const r = await fetch('/api'+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error(await r.text()); return r.json(); },
+  async del(path){ const r = await fetch('/api'+path,{method:'DELETE'}); if(!r.ok) throw new Error(await r.text()); return r.json(); },
 };
 
 // ---- Currency / formatting ----
@@ -25,7 +21,7 @@ function chip(type){
 }
 
 // ---- Nav ----
-function renderNav(active, email){
+function renderNav(active){
   const links = [
     ['/', 'Dashboard', 'index'],
     ['/collection', 'Collection', 'collection'],
@@ -38,18 +34,10 @@ function renderNav(active, email){
     </div>
     <div class="cta">
       <a href="/log" class="${active==='log'?'active':''}">＋ Log a Meal</a>
-      ${email ? `<span class="user-email">${esc(email)}</span><button type="button" id="logoutBtn" class="logout-btn">Log out</button>` : ''}
     </div>
   </div></nav>`;
 }
 
-// Guards the page (redirects to /login if signed out), mounts the nav with
-// the current user's email, and wires the logout button. Returns the
-// session, or null if the page is about to redirect.
-async function initNav(active){
-  const session = await Auth.guard();
-  if(!session) return null;
-  document.getElementById('nav').innerHTML = renderNav(active, session.user.email);
-  document.getElementById('logoutBtn').onclick = () => Auth.signOut();
-  return session;
+function initNav(active){
+  document.getElementById('nav').innerHTML = renderNav(active);
 }

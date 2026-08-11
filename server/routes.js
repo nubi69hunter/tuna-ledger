@@ -1,9 +1,16 @@
 import { Router } from 'express';
-import { requireAuth } from './auth.js';
+import { getAdmin, ensureDefaultTypes } from './db.js';
 import { per100g, proteinGrams, perProtein, drainRatio, DEFAULT_PROTEIN } from './metrics.js';
 
 const router = Router();
-router.use(requireAuth);
+
+// Single-user app, no login: every request goes straight to Supabase via
+// the service-role client.
+router.use(async (req, res, next) => {
+  req.supabase = getAdmin();
+  await ensureDefaultTypes();
+  next();
+});
 
 /* ---------------- TYPES ---------------- */
 router.get('/types', async (req, res) => {
@@ -80,7 +87,6 @@ router.post('/cans', async (req, res) => {
   const { data, error } = await req.supabase
     .from('cans')
     .insert({
-      user_id: req.user.id,
       brand: brand.trim(),
       product: product?.trim() || null,
       type_id: type_id || null,
@@ -163,7 +169,6 @@ router.post('/meals', async (req, res) => {
   const { data, error } = await req.supabase
     .from('meals')
     .insert({
-      user_id: req.user.id,
       can_id,
       drained,
       price,
